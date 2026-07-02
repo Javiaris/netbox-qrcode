@@ -3,6 +3,7 @@ from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from netbox.plugins import PluginTemplateExtension
 from .template_content_functions import create_text, create_url, config_for_modul, create_QRCode
+from .utilities import get_model_short_name
 
 # ******************************************************************************************
 # Contains the main functionalities of the plugin and thus creates the content for the 
@@ -22,6 +23,17 @@ except ImportError:
 ##################################
 # Class for creating the plugin content
 class QRCode(PluginTemplateExtension):
+
+    # Config keys passed to the qrcode3.html template as extra_context.
+    TEMPLATE_CONFIG_KEYS = [
+        'title', 'with_text', 'text_location',
+        'text_align_horizontal', 'text_align_vertical',
+        'font', 'font_size', 'font_weight', 'font_color',
+        'with_qr',
+        'label_qr_width', 'label_qr_height', 'label_qr_text_distance',
+        'label_width', 'label_height',
+        'label_edge_top', 'label_edge_left', 'label_edge_right', 'label_edge_bottom',
+    ]
 
     ##################################          
     # Creates a plug-in view for a label.
@@ -54,32 +66,14 @@ class QRCode(PluginTemplateExtension):
         try:
             if version.parse(settings.RELEASE.version).major >= 3:
 
-                render = self.render(
-                    'netbox_qrcode/qrcode3.html', extra_context={
-                                                                    'title': config.get('title'),
-                                                                    'labelDesignNo': labelDesignNo,
-                                                                    'qrCode': qrCode, 
-                                                                    'with_text': config.get('with_text'),
-                                                                    'text': text,
-                                                                    'text_location': config.get('text_location'),
-                                                                    'text_align_horizontal': config.get('text_align_horizontal'),
-                                                                    'text_align_vertical': config.get('text_align_vertical'),
-                                                                    'font': config.get('font'),
-                                                                    'font_size': config.get('font_size'),
-                                                                    'font_weight': config.get('font_weight'),
-                                                                    'font_color': config.get('font_color'),
-                                                                    'with_qr': config.get('with_qr'),
-                                                                    'label_qr_width': config.get('label_qr_width'),
-                                                                    'label_qr_height': config.get('label_qr_height'),
-                                                                    'label_qr_text_distance': config.get('label_qr_text_distance'),
-                                                                    'label_width': config.get('label_width'),
-                                                                    'label_height': config.get('label_height'), 
-                                                                    'label_edge_top': config.get('label_edge_top'),
-                                                                    'label_edge_left': config.get('label_edge_left'),
-                                                                    'label_edge_right': config.get('label_edge_right'),
-                                                                    'label_edge_bottom': config.get('label_edge_bottom')
-                                                                }
+                # Build extra_context from config keys
+                extra_context = {key: config.get(key) for key in self.TEMPLATE_CONFIG_KEYS}
+                extra_context['labelDesignNo'] = labelDesignNo
+                extra_context['qrCode'] = qrCode
+                extra_context['text'] = text
 
+                render = self.render(
+                    'netbox_qrcode/qrcode3.html', extra_context=extra_context
                 )
             
                 return render
@@ -105,10 +99,11 @@ class QRCode(PluginTemplateExtension):
         # Support up to 10 additional label configurations (objectName_2 to ..._10) per object (e.g. device, rack, etc.).
 
         config = self.context['config'] # Django configuration
+        model_name = get_model_short_name(self.models)
 
         for i in range(2, 11):
 
-            configName = self.models[0].replace('dcim.', '') + '_' + str(i)
+            configName = model_name + '_' + str(i)
             obj_cfg = config.get(configName) # Load configuration for additional label if possible.
 
             if(obj_cfg):
@@ -120,75 +115,47 @@ class QRCode(PluginTemplateExtension):
 
 ##################################
 # The following section serves to integrate the plugin into Netbox Core.
-        
-# Class for creating a QR code for the model: Device
-class DeviceQRCode(QRCode):
-    models = ('dcim.device',)
+# Model QR code classes are generated from a registry to avoid boilerplate.
 
-    def right_page(self):
+def _make_qrcode_class(class_name, model_ref, page_side):
+    """Create a QRCode subclass for the given model.
+
+    Parameters:
+        class_name: Name for the generated class.
+        model_ref:  Full model reference, e.g. 'dcim.device'.
+        page_side:  'right' or 'left' – determines which page hook is used.
+    """
+    attrs = {'models': (model_ref,)}
+
+    def _page_method(self):
         return self.Create_PluginContent()
 
-# Class for creating a QR code for the model: Rack
-class RackQRCode(QRCode):
-    models = ('dcim.rack',)
+    if page_side == 'right':
+        attrs['right_page'] = _page_method
+    else:
+        attrs['left_page'] = _page_method
 
-    def right_page(self):
-        return self.Create_PluginContent()
+    return type(class_name, (QRCode,), attrs)
 
-# Class for creating a QR code for the model: Cable
-class CableQRCode(QRCode):
-    models = ('dcim.cable',)
+# Registry of (class_name, model_ref, page_side)
+_MODEL_REGISTRY = [
+    ('DeviceQRCode',    'dcim.device',              'right'),
+    ('RackQRCode',      'dcim.rack',                'right'),
+    ('CableQRCode',     'dcim.cable',               'left'),
+    ('LocationQRCode',  'dcim.location',            'left'),
+    ('PowerFeedQRCode', 'dcim.powerfeed',           'right'),
+    ('PowerPanelQRCode','dcim.powerpanel',          'right'),
+    ('ModuleQRCode',    'dcim.module',              'right'),
+]
 
-    def left_page(self):
-        return self.Create_PluginContent()
+# Generate classes and inject into module namespace
+for _name, _model, _side in _MODEL_REGISTRY:
+    globals()[_name] = _make_qrcode_class(_name, _model, _side)
 
-# Class for creating a QR code for the model: Location
-class LocationQRCode(QRCode):
-    models = ('dcim.location',)
-
-    def left_page(self):
-        return self.Create_PluginContent()
-
-# Class for creating a QR code for the model: Power Feed
-class PowerFeedQRCode(QRCode):
-    models = ('dcim.powerfeed',)
-
-    def right_page(self):
-        return self.Create_PluginContent()
-
-# Class for creating a QR code for the model: Power Panel
-class PowerPanelQRCode(QRCode):
-    models = ('dcim.powerpanel',)
-
-    def right_page(self):
-        return self.Create_PluginContent()
-
-# Class for dcim.module
-class ModuleQRCode(QRCode):
-    models = ('dcim.module',)
-
-    def right_page(self):
-        return self.Create_PluginContent()
-# Class for Netbox-Inventory Plugin
-class AssetQRCode(QRCode):
-    models = ('netbox_inventory.asset',)
-
-    def right_page(self):
-        return self.Create_PluginContent()
-
-##################################
-# Other plugins support
-
-# Commenting out (for now) - make this work on core models first.
-# Class for creating a QR code for the Plugin: Netbox-Inventory (https://github.com/ArnesSI/netbox-inventory)
-#class Plugin_Netbox_Inventory(QRCode):
-#    models = ()'netbox_inventory.asset' # Info for Netbox in which model the plugin should be integrated.
-#
-#    def right_page(self):
-#        return self.Create_PluginContent()
+# Inventory plugin class (conditionally registered)
+AssetQRCode = _make_qrcode_class('AssetQRCode', 'netbox_inventory.asset', 'right')
 
 # Connects Netbox Core with the plug-in classes
-# Removed , Plugin_Netbox_Inventory]
-template_extensions = [DeviceQRCode, ModuleQRCode, RackQRCode, CableQRCode, LocationQRCode, PowerFeedQRCode, PowerPanelQRCode]
+template_extensions = [globals()[name] for name, _, _ in _MODEL_REGISTRY]
 if INVENTORY_AVAILABLE:
     template_extensions.append(AssetQRCode)
