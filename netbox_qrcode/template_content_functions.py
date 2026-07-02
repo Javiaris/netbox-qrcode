@@ -1,5 +1,4 @@
-from .utilities import get_img_b64, get_qr
-from django.template import engines
+from .utilities import get_img_b64, get_qr, get_model_short_name, render_django_template
 
 # ******************************************************************************************
 # For better clarity, the sub-functions of template_content.py have been outsourced.
@@ -24,8 +23,7 @@ def config_for_modul(parentSelf, labelDesignNo):
 
     # Collect the QR code plugin configuration for the specific object such as device, rack etc.
     # and overwrite the default configuration fields.
-    model_name = parentSelf.models[0].replace('dcim.', '')
-    model_name = model_name.replace('netbox_inventory.', '') 
+    model_name = get_model_short_name(parentSelf.models)
     obj_cfg = config.get(model_name + confModulsufix) 
     if obj_cfg is not None: 
         config.update(obj_cfg) # Ovverride default confiv Values
@@ -66,9 +64,7 @@ def create_url(parentSelf, config, obj):
 
     if config.get('url_template'):
         # A user-defined design specification of the URL is provided in ninja2 format.
-        django_engine = engines["django"]
-        template = django_engine.from_string(config.get('url_template')) # Custom template for URL design.
-        return template.render({'obj': obj}) # Replace placeholder
+        return render_django_template(config.get('url_template'), {'obj': obj})
     else:
         return request.build_absolute_uri(obj.get_absolute_url()) # URL to the requested page
 
@@ -98,12 +94,10 @@ def create_text(config, obj, qrCode):
 #   qrCode: QR-Code Image (To create a freely defined label with QR code.)
 def get_text_template(config, obj, qrCode):
 
-    django_engine = engines["django"]
-    template = django_engine.from_string(config.get('text_template')) # Get Custom Template
-    logo = config.get('logo')
-    return template.render({'obj': obj, 
-                            'logo': logo,
-                            'qrCode': qrCode}) # Replace placeholder
+    return render_django_template(
+        config.get('text_template'),
+        {'obj': obj, 'logo': config.get('logo'), 'qrCode': qrCode}
+    )
 
 ##################################
 # Retrieves all values from the object (e.g. device, rack, etc.)
