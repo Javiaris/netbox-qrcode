@@ -1,6 +1,7 @@
 import logging
 
 from .utilities import get_img_b64, get_qr, get_model_short_name, render_django_template
+from django.utils.html import escape as html_escape
 
 logger = logging.getLogger('netbox_qrcode')
 
@@ -154,27 +155,27 @@ def get_text_fields(config, obj):
             if cfn:
                 try:
                     if getattr(obj, text_field).get(cfn):
-                        text.append('{}'.format(getattr(obj, text_field).get(cfn)))
+                        text.append(html_escape('{}'.format(getattr(obj, text_field).get(cfn))))
                 except AttributeError:
                     # Fallback for list-type attributes (e.g. cable terminations in nb3.3+)
                     attr_value = getattr(obj, text_field)
                     if type(attr_value) is list:
                         first_element = next(iter(attr_value), None)
                         if first_element and getattr(first_element, cfn, None):
-                            text.append('{}'.format(getattr(first_element, cfn)))
+                            text.append(html_escape('{}'.format(getattr(first_element, cfn))))
                     else:
                         logger.debug(
                             "Attribute '%s' on %s is not a dict or list; cannot resolve sub-field '%s'",
                             text_field, type(obj).__name__, cfn,
                         )
             else:
-                text.append('{}'.format(getattr(obj, text_field)))
+                text.append(html_escape('{}'.format(getattr(obj, text_field))))
 
     # Append user-defined text to the end.
     custom_text = config.get('custom_text')
 
     if custom_text:
-        text.append(custom_text)
+        text.append(html_escape(custom_text))
 
     # Convert text list to string with line breaks.
     return '<br>'.join(text)

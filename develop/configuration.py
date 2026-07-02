@@ -87,15 +87,17 @@ CHANGELOG_RETENTION = int(os.environ.get("CHANGELOG_RETENTION", 0))
 # API Cross-Origin Resource Sharing (CORS) settings. If CORS_ORIGIN_ALLOW_ALL is set to True, all origins will be
 # allowed. Otherwise, define a list of allowed origins using either CORS_ORIGIN_WHITELIST or
 # CORS_ORIGIN_REGEX_WHITELIST. For more information, see https://github.com/ottoyiu/django-cors-headers
-CORS_ORIGIN_ALLOW_ALL = True
+# WARNING: Do not use in production. Restrict to specific origins.
+CORS_ORIGIN_ALLOW_ALL = os.environ.get("CORS_ORIGIN_ALLOW_ALL", "True").lower() in ("true", "1")
 CORS_ORIGIN_WHITELIST = []
 CORS_ORIGIN_REGEX_WHITELIST = []
 
 # Set to True to enable server debugging. WARNING: Debugging introduces a substantial performance penalty and may reveal
 # sensitive information about your installation. Only enable debugging while performing testing. Never enable debugging
 # on a production system.
-DEBUG = True
-DEVELOPER = True
+# WARNING: Must be False in production. Exposes stack traces and sensitive data.
+DEBUG = os.environ.get("DEBUG", "True").lower() in ("true", "1")
+DEVELOPER = os.environ.get("DEVELOPER", "True").lower() in ("true", "1")
 
 # Email settings
 EMAIL = {
@@ -118,7 +120,8 @@ LOGGING = {}
 
 # Setting this to True will permit only authenticated users to access any part of NetBox. By default, anonymous users
 # are permitted to access most data in NetBox (excluding secrets) but not make any changes.
-LOGIN_REQUIRED = False
+# WARNING: Should be True in production to require authentication.
+LOGIN_REQUIRED = os.environ.get("LOGIN_REQUIRED", "False").lower() in ("true", "1")
 
 # Base URL path if accessing NetBox within a directory. For example, if installed at http://example.com/netbox/, set:
 # BASE_PATH = 'netbox/'
