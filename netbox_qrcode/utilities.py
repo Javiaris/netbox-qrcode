@@ -1,7 +1,11 @@
 import base64
-import qrcode
+import logging
 from io import BytesIO
 from django.template import engines
+
+import qrcode
+
+logger = logging.getLogger('netbox_qrcode')
 
 # ******************************************************************************************
 # Includes useful tools to create the content.
@@ -14,7 +18,12 @@ from django.template import engines
 #   text: Text to be included in the QR code.
 #   **kwargs: List of parameters which properties the QR code should have. (e.g. version, box_size, error_correction, border etc.)
 def get_qr(text, **kwargs):
-    qr = qrcode.QRCode(**kwargs)
+    try:
+        qr = qrcode.QRCode(**kwargs)
+    except TypeError as exc:
+        raise ValueError(
+            "Invalid QR code parameters: {}".format(kwargs)
+        ) from exc
     qr.add_data(text)
     qr.make(fit=True)
     img = qr.make_image()
@@ -28,7 +37,11 @@ def get_qr(text, **kwargs):
 #   img: Image file
 def get_img_b64(img):
     stream = BytesIO()
-    img.save(stream, format='png')
+    try:
+        img.save(stream, format='png')
+    except Exception:
+        logger.exception("Failed to save image to PNG format")
+        raise
     return str(base64.b64encode(stream.getvalue()), encoding='ascii')
 
 ##################################

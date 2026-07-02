@@ -1,9 +1,13 @@
+import logging
+
 from packaging import version
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from netbox.plugins import PluginTemplateExtension
 from .template_content_functions import create_text, create_url, config_for_modul, create_QRCode
 from .utilities import get_model_short_name
+
+logger = logging.getLogger('netbox_qrcode')
 
 # ******************************************************************************************
 # Contains the main functionalities of the plugin and thus creates the content for the 
@@ -83,6 +87,10 @@ class QRCode(PluginTemplateExtension):
                     'netbox_qrcode/qrcode.html', extra_context={'image': qrCode}
                 )
         except ObjectDoesNotExist:
+            logger.warning(
+                "Object not found while rendering QR code for %s (label design #%s)",
+                type(obj).__name__, labelDesignNo,
+            )
             return ''
 
     ##################################
