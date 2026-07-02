@@ -1,4 +1,8 @@
+import logging
+
 from .utilities import get_img_b64, get_qr, get_model_short_name, render_django_template
+
+logger = logging.getLogger('netbox_qrcode')
 
 # ******************************************************************************************
 # For better clarity, the sub-functions of template_content.py have been outsourced.
@@ -47,8 +51,17 @@ def create_QRCode(text, config):
             qr_args[k.replace('qr_', '')] = v
 
     # Create a QR code
-    qrCode = get_qr(text, **qr_args)
-    return get_img_b64(qrCode)
+    try:
+        qrCode = get_qr(text, **qr_args)
+    except Exception:
+        logger.exception("Failed to generate QR code (qr_args=%s)", qr_args)
+        raise
+
+    try:
+        return get_img_b64(qrCode)
+    except Exception:
+        logger.exception("Failed to convert QR code image to base64")
+        raise
 
 
 ##################################
@@ -62,9 +75,17 @@ def create_url(parentSelf, config, obj):
 
     request = parentSelf.context['request'] # HTML Request Informations
 
-    if config.get('url_template'):
+    url_template = config.get('url_template')
+    if url_template:
         # A user-defined design specification of the URL is provided in ninja2 format.
-        return render_django_template(config.get('url_template'), {'obj': obj})
+        try:
+            return render_django_template(url_template, {'obj': obj})
+        except Exception:
+            logger.exception(
+                "Failed to render url_template '%s' for %s",
+                url_template, type(obj).__name__,
+            )
+            raise
     else:
         return request.build_absolute_uri(obj.get_absolute_url()) # URL to the requested page
 
@@ -77,13 +98,13 @@ def create_url(parentSelf, config, obj):
 #   qrCode: QR-Code Image 
 def create_text(config, obj, qrCode):
 
-    text = str()
-
     if config.get('with_text'):
         if config.get('text_template'):
             return get_text_template(config, obj, qrCode) # Create text content based on the Ninja2 template from the user
         else:
             return get_text_fields(config, obj) # Use the list of variables from the Config.
+
+    return ''
 
 ##################################
 # A user-defined design specification of the text is provided in ninja2 format.
@@ -94,10 +115,18 @@ def create_text(config, obj, qrCode):
 #   qrCode: QR-Code Image (To create a freely defined label with QR code.)
 def get_text_template(config, obj, qrCode):
 
-    return render_django_template(
-        config.get('text_template'),
-        {'obj': obj, 'logo': config.get('logo'), 'qrCode': qrCode}
-    )
+    text_template = config.get('text_template')
+    try:
+        return render_django_template(
+            text_template,
+            {'obj': obj, 'logo': config.get('logo'), 'qrCode': qrCode}
+        )
+    except Exception:
+        logger.exception(
+            "Failed to render text_template '%s' for %s",
+            text_template, type(obj).__name__,
+        )
+        raise
 
 ##################################
 # Retrieves all values from the object (e.g. device, rack, etc.)
@@ -113,21 +142,31 @@ def get_text_fields(config, obj):
     for text_field in config.get('text_fields', []):
         cfn = None
         if '.' in text_field:
-            try:
-                text_field, cfn = text_field.split('.')
-            except ValueError:
-                cfn = None
+            parts = text_field.split('.')
+            if len(parts) != 2:
+                logger.warning(
+                    "Skipping malformed text_field '%s': expected 'field.subfield' format",
+                    text_field,
+                )
+                continue
+            text_field, cfn = parts
         if getattr(obj, text_field, None):
             if cfn:
                 try:
                     if getattr(obj, text_field).get(cfn):
                         text.append('{}'.format(getattr(obj, text_field).get(cfn)))
                 except AttributeError:
-                    # fix for nb3.3: trying to get cable termination and device in same way as custom field
-                    if type(getattr(obj, text_field)) is list:
-                        first_element = next(iter(getattr(obj, text_field)), None)
+                    # Fallback for list-type attributes (e.g. cable terminations in nb3.3+)
+                    attr_value = getattr(obj, text_field)
+                    if type(attr_value) is list:
+                        first_element = next(iter(attr_value), None)
                         if first_element and getattr(first_element, cfn, None):
                             text.append('{}'.format(getattr(first_element, cfn)))
+                    else:
+                        logger.debug(
+                            "Attribute '%s' on %s is not a dict or list; cannot resolve sub-field '%s'",
+                            text_field, type(obj).__name__, cfn,
+                        )
             else:
                 text.append('{}'.format(getattr(obj, text_field)))
 
